@@ -41,17 +41,21 @@ type Participant = Omit<
   "socketId"
 >;
 
-let socket: Socket;
+let socket: Socket | null = null;
 
 async function getSocketConnection() {
+  console.log({ socket })
   if (socket) return;
   //eslint-disable-next-line @typescript-eslint/ban-ts-comment
   //@ts-ignore
   socket = io("http://localhost:3001");
   socket.on("connect", () => {
-    // console.log("connected");
-  });
-  // console.log({ socket });
+    console.log("connected");
+  })
+
+  socket.on("disconnect", () => {
+    console.log("disconnected");
+  })
 }
 
 interface RaceTimeStampProps {
@@ -126,6 +130,7 @@ export default function Race({
   const lang = searchParams ? searchParams.get("lang") : "";
 
   function startRaceEventHandlers() {
+    if (!raceId || !socket) return;
     socket.on(`RACE_${raceId}`, async (payload: SocketPayload) => {
       switch (payload.type) {
         case SocketEvents.GAME_STATE_UPDATE:
@@ -168,19 +173,25 @@ export default function Race({
   // Connection to wss
   useEffect(() => {
     if (!raceId || !participantId) return;
-    getSocketConnection().then(() => {
-      socket.on("connect", () => {
-        socket.emit<SocketEvent>(SocketEvents.USER_RACE_ENTER, {
-          raceId,
-          participantId,
-          socketId: socket.id,
-        } satisfies ParticipantRacePayload);
 
-        startRaceEventHandlers();
+    getSocketConnection()
+      .then(() => {
+        socket!.on("connect", () => {
+          socket!.emit<SocketEvent>(SocketEvents.USER_RACE_ENTER, {
+            raceId,
+            participantId,
+            socketId: socket!.id,
+          } satisfies ParticipantRacePayload);
+
+          startRaceEventHandlers();
+        })
+      })
+      .catch((err) => {
+        console.error(err);
       });
-    });
     return () => {
-      socket.disconnect();
+      if (socket) socket.disconnect();
+      socket = null;
     };
   }, []);
 
@@ -190,8 +201,8 @@ export default function Race({
 
     const gameLoop = setInterval(() => {
       if (raceStatus === "running") {
-        socket.emit<SocketEvent>(SocketEvents.PARTICIPANT_POSITION_UPDATE, {
-          socketId: socket.id,
+        socket!.emit<SocketEvent>(SocketEvents.PARTICIPANT_POSITION_UPDATE, {
+          socketId: socket!.id,
           participantId,
           position,
           raceId,
